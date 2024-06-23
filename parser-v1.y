@@ -1,6 +1,5 @@
 %{
 #include <stdio.h>
-#include <stdlib.h>
 #include "code.h"
 int yylex();
 
@@ -95,10 +94,11 @@ char* my_dtoa(double f) {       //double to string
 %nonassoc UPLUS UMINUS DEREF ADDR_OF
 %nonassoc POSTFIX_INC POSTFIX_DEC 
 
-%%
+%start start
 
+%%
 start
-    : declr_or_def {  }
+    : declr_or_def {    }
     ;
 
 declr_or_def
@@ -740,10 +740,14 @@ id
 %%
 
 int main(void) {
+    if ((f_asm = fopen(FILENAME, "w")) == NULL) {
+        perror("Error at opening file");
+    }
+    init();
     yyparse();
+    fclose(f_asm);
     return 0;
 }
-
 void yyerror(char *msg) {
     fprintf(stderr, "Error at line %d: %s\n", lineNum, msg);
 }
