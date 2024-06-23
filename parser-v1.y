@@ -69,12 +69,13 @@ char* my_dtoa(double f) {       //double to string
 
 %type <stringVal> assign_expr expr term 
 %type <stringVal> bitwise_or_expr bitwise_xor_expr bitwise_and_expr
-%type <stringVal> factor primary atom unary_expr post_expr paren_expr literal var
+%type <stringVal> factor primary atom unary_expr post_expr paren_expr var
+%type <intVal> literal array_dim
 
 %type <stringVal> stmts stmt if_else_stmt switch_stmt while_stmt for_stmt return_stmt compound_stmt comp_stmt_content
 %type <stringVal> switch_clauses switch_clause for_condition for_last_condition
 
-%type <stringVal> array_decl arrays array_id array_dim
+%type <stringVal> array_decl arrays array_id
 %type <stringVal> funtion_decl function_def params param arg_list
 
 
@@ -179,11 +180,11 @@ array_id
     ;
 
 array_dim
-    : array_dim LSQBRACK expr RSQBRACK { 
+    : array_dim LSQBRACK literal RSQBRACK { 
         //simplify the rule as this is the only case
         $$ = $3;
     }
-    | LSQBRACK expr RSQBRACK{}
+    | LSQBRACK literal RSQBRACK{}
     ;
 
 /*******FUNCTION DECLARATION********/
@@ -382,7 +383,7 @@ assign_expr
     : ID ASSIGN assign_expr  {
         is_array = 0;
     }
-    | ID LSQBRACK expr RSQBRACK ASSIGN assign_expr{
+    | ID LSQBRACK assign_expr RSQBRACK ASSIGN assign_expr{
         is_array = 0;
         fprintf(f_asm, "\n/*    normal assign*/\n");
         $$=$1;
@@ -706,7 +707,7 @@ var
 
 
 non_ptr_array_id
-    : ID array_dim{ 
+    : ID LSQBRACK assign_expr RSQBRACK{ 
         int index = look_up_symbol($1);
         fprintf(f_asm, "    li t0, %d\n", table[index].offset * (-4) - 48);
         fprintf(f_asm, "    lw t1, 0(sp)\n");
