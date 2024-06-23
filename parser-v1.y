@@ -65,9 +65,9 @@ char* my_dtoa(double f) {       //double to string
 
 
 %type <stringVal> declaration type id non_ptr_id non_ptr_array_id declr_or_def
-%type <stringVal> scalar_decl idents option id_assignment
+%type <stringVal> scalar_decl idents option id_assignment ptr_assignee
 
-%type <stringVal> assign_expr expr term
+%type <stringVal> assign_expr expr term oror_expr
 %type <stringVal> bitwise_or_expr bitwise_xor_expr bitwise_and_expr
 %type <stringVal> factor primary atom unary_expr shift_expr post_expr paren_expr literal var
 
@@ -113,9 +113,9 @@ option
     ;
 
 declaration
-    : scalar_decl{ }
-    | array_decl  { }
-    | funtion_decl {  }
+    : scalar_decl{ $$=$1; }
+    | array_decl  { $$=$1;}
+    | funtion_decl {  $$=$1; }
     ;
 
 /*******SCALAR DECLARATION********/
@@ -127,6 +127,7 @@ scalar_decl
     ;
 idents
     : idents COMMA id_assignment {
+        // $$=$1; have/don't have shld make no difference
 
     }
     | id_assignment {
@@ -136,11 +137,20 @@ idents
     
 id_assignment
     : id ASSIGN expr {
+        $$ = install_symbol($1);
+        int index = look_up_symbol($1);
+        fprintf(f_asm, "    lw t0, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    sw t0, %d(s0)\n", table[index].offset * (-4) - 48);
+        fprintf(f_asm, "    addi sp, sp, -4\n");
 
     }
     | id { 
-
-        }
+        $$ = install_symbol($1);
+        int index = look_up_symbol($1);
+        fprintf(f_asm, "    addi sp, sp, -4\n");
+        fprintf(f_asm, "    sw zero, %d(s0)\n", table[index].offset * (-4) - 48);
+    }
     ;
 
 
@@ -164,28 +174,27 @@ arrays
 
 array_id
     : id array_dim { 
-
+        $$ = install_array_symbol($1,$2); 
     }
     ;
 
 array_dim
-    : array_dim LSQBRACK assign_expr RSQBRACK { 
-
+    : array_dim LSQBRACK expr RSQBRACK { 
+        //simplify the rule as this is the only case
+        $$ = $3;
     }
-    | LSQBRACK assign_expr RSQBRACK { 
-
-    }
+    | LSQBRACK expr RSQBRACK{}
     ;
 
 /*******FUNCTION DECLARATION********/
 
 funtion_decl 
     : type id LPAREN params RPAREN SEMICOLON {
-
+        fprintf(f_asm, ".global %s\n", $2);
 
     }
     | type id LPAREN RPAREN SEMICOLON {
-
+        fprintf(f_asm, ".global %s\n", $2);
     }
     ;
 
@@ -206,13 +215,25 @@ param
 /*********  FUNCTION DEFINITION  ************/
 
 function_def
-    : type id LPAREN params RPAREN compound_stmt {
-
+    : type id LPAREN params RPAREN {
+        cur_scope++;
+        set_scope_and_offset_of_param($4);
+        code_gen_func_header($2);
 
     }
-    | type id LPAREN RPAREN compound_stmt {
-
-
+    compound_stmt {
+        pop_up_symbol(cur_scope);
+        cur_scope--;
+        code_gen_at_end_of_function_body($2);
+    }
+    | type id LPAREN RPAREN {
+        cur_scope++;
+        code_gen_func_header($2);
+    }
+    compound_stmt {
+        pop_up_symbol(cur_scope);
+        cur_scope--;
+        code_gen_at_end_of_function_body($2);
     }
     ;
 
@@ -357,12 +378,56 @@ comp_stmt_content
 /*********   EXPRESSION   ************/
 
 
-
 assign_expr
-    : expr ASSIGN assign_expr  {
+    : ID ASSIGN assign_expr  {
+        is_array = 0;
     }
-    | expr {  }
+    | ID LSQBRACK assign_expr RSQBRACK ASSIGN assign_expr{
+        is_array = 0;
+        fprintf(f_asm, "\n/*    normal assign*/\n");
+        $$=$1;
+        int index = look_up_symbol($1);
+        fprintf(f_asm, "    lw t0, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    sw t0, %d(s0)\n", table[index].offset * (-4) - 48);
+    }
+    | ptr_assignee ASSIGN assign_expr{
+        is_array = 0;
+        if(assignflag==0){
+            int index = look_up_symbol($1);
+            fprintf(f_asm, "\n/*    pointer assign  */\n");
+            fprintf(f_asm, "    lw t0, 0(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, 4\n");
+            fprintf(f_asm, "    lw t1, %d(s0)\n", table[index].offset * (-4) - 48);
+            fprintf(f_asm, "    add t1, s0, t1\n");
+            fprintf(f_asm, "    sw t0, 0(t1)\n");
+        }else if(assignflag==2){
+            fprintf(f_asm, "\n/*    array pointer assign*/\n");
+            fprintf(f_asm, "    lw t0, 0(sp)\n") ;
+            fprintf(f_asm, "    addi sp, sp, 4\n");
+            fprintf(f_asm, "    lw t1, 0(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, 4\n");
+            fprintf(f_asm, "    add t1, s0, t1\n");
+            fprintf(f_asm, "    sw t0, 0(t1)\n");
+        }
+    }
+    | expr { 
+        is_array = 0;
+        $$=$1;
+         }
     ;
+ptr_assignee
+    : STAR ID{
+        is_array = 0;
+        assignflag=0;
+        $$ = $2;
+    }
+    | STAR LPAREN assign_expr RPAREN{
+        is_array = 0;
+        assignflag=2;
+        $$=$3;
+
+    }
 
 expr
     : expr OROR term {
@@ -396,20 +461,20 @@ bitwise_and_expr
 
 
 factor
-    : factor EQ shift_expr {
+    : factor EQ primary {
     }
-    | factor NOTEQ shift_expr { 
+    | factor NOTEQ primary { 
 
     }
-    | factor LT shift_expr {
+    | factor LT primary {
     }
-    | factor LTE shift_expr {
+    | factor LTE primary {
     }
-    | factor GT shift_expr {
+    | factor GT primary {
     }
-    | factor GTE shift_expr {
+    | factor GTE primary {
     }
-    | shift_expr { $$ = $1; }
+    | primary { $$ = $1; }
     ;
 
 shift_expr
@@ -432,14 +497,7 @@ atom
     : atom STAR atom {
     }
     | atom DIVIDE atom {
-        // allocate space to print the code, wrap by <expr></expr> tag
-        char *s = (char*)malloc(sizeof(char)*(strlen($1)+strlen($3)+15));
-        strcpy(s, "<expr>");
-        strcat(s, $1);
-        strcat(s, "/");
-        strcat(s, $3);
-        strcat(s, "</expr>");
-        $$ = s;
+
     }
     | atom MOD atom {
     }
@@ -504,7 +562,11 @@ paren_expr
     ;
 
 literal
-    : NUMBER {          
+    : NUMBER {   
+        $$=$1;
+        fprintf(f_asm, "    li t0, %d\n", $1);
+        fprintf(f_asm, "    sw t0, -4(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, -4\n");  
         }
     | DOUBLE {
     }
@@ -537,13 +599,12 @@ type
     ;
 
 id
-    : non_ptr_id {  }
-    | STAR ID { 
-    }
+    : non_ptr_id { $$=$1; }
+    | STAR ID { $$ = $2; }
     ;
 
 non_ptr_id
-    : ID {  }
+    : ID { $$=$1; }
     ;
 
 
