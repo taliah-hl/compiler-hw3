@@ -114,9 +114,9 @@ option
     ;
 
 declaration
-    : scalar_decl{ $$=$1; }
-    | array_decl  { $$=$1;}
-    | funtion_decl {  $$=$1; }
+    : scalar_decl{  }
+    | array_decl  {}
+    | funtion_decl {  }
     ;
 
 /*******SCALAR DECLARATION********/
@@ -128,7 +128,7 @@ scalar_decl
     ;
 idents
     : idents COMMA id_assignment {
-        // $$=$1; have/don't have shld make no difference
+
 
     }
     | id_assignment {
@@ -184,7 +184,7 @@ array_dim
         //simplify the rule as this is the only case
         $$ = $3;
     }
-    | LSQBRACK literal RSQBRACK{}
+    | LSQBRACK literal RSQBRACK{ $$=$2; }
     ;
 
 /*******FUNCTION DECLARATION********/
@@ -382,6 +382,7 @@ comp_stmt_content
 assign_expr
     : ID ASSIGN assign_expr  {
         is_array = 0;
+        $$=$1;
     }
     | ID LSQBRACK assign_expr RSQBRACK ASSIGN assign_expr{
         is_array = 0;
@@ -415,7 +416,7 @@ assign_expr
     | expr { 
         is_array = 0;
         $$=$1;
-         }
+    }
     ;
 ptr_assignee
     : STAR ID{
@@ -657,7 +658,7 @@ paren_expr
     }
     | LPAREN assign_expr RPAREN { 
     }
-    | literal { }
+    | literal {  }
     | var { $$=$1; }
     ;
 
@@ -701,13 +702,13 @@ var
 
 
     }
-    | non_ptr_array_id{
-    }    
+    | non_ptr_array_id{ $$=$1;  }    
     ;
 
 
 non_ptr_array_id
     : ID LSQBRACK assign_expr RSQBRACK{ 
+        $$=$1;
         int index = look_up_symbol($1);
         fprintf(f_asm, "    li t0, %d\n", table[index].offset * (-4) - 48);
         fprintf(f_asm, "    lw t1, 0(sp)\n");
