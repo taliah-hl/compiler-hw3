@@ -1,7 +1,7 @@
 %{
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include "code.h"
 int yylex();
 
 int dbg=0;
@@ -433,9 +433,7 @@ ptr_assignee
 expr
     : expr OROR term {
     }
-    | term {
-        $$ = $1;
-    }
+    | term {  $$ = $1;  }
     ;
 term
     : term ANDAND bitwise_or_expr {
@@ -463,11 +461,44 @@ bitwise_and_expr
 
 factor
     : factor EQ primary {
+        fprintf(f_asm, "    lw t0, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    lw t1, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    bne t1, t0, L%d\n", cur_label);
     }
     | factor NOTEQ primary { 
+        if (in_if == 1) {
+            fprintf(f_asm, "    lw t0, 0(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, 4\n");
+            fprintf(f_asm, "    lw t1, 0(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, 4\n");
+            fprintf(f_asm, "    beq t1, t0, L%d\n", cur_label);
+        } else {
+            fprintf(f_asm, "    lw t0, 0(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, 4\n");
+            fprintf(f_asm, "    lw t1, 0(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, 4\n");
+            fprintf(f_asm, "    bne t1, t0, LXA\n");
+            fprintf(f_asm, "    addi sp, sp, -4\n");
+            fprintf(f_asm, "    li t0, 0\n");
+            fprintf(f_asm, "    sw t0, 0(sp)\n");
+            fprintf(f_asm, "    beq zero, zero, EXITXA\n");
+            fprintf(f_asm, "LXA:\n");
+            fprintf(f_asm, "    addi sp, sp, -4\n");
+            fprintf(f_asm, "    li t0, 1\n");
+            fprintf(f_asm, "    sw t0, 0(sp)\n");
+            fprintf(f_asm, "EXITXA:\n");
+        }
 
     }
     | factor LT primary {
+         fprintf(f_asm, "    lw t0, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    lw t1, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        if(do_flag)fprintf(f_asm, "    bge t1, t0, L%d\n", cur_label-2);
+        else fprintf(f_asm, "    bge t1, t0, L%d\n", cur_label);
     }
     | factor LTE primary {
     }
@@ -480,20 +511,82 @@ factor
 
 
 primary
-    : primary PLUS primary {
+    : primary PLUS atom {
+        if(is_array){
+            int index = look_up_symbol($1);
+            $$=$1;
+            if(dbg)printf("HELLO %s\n",table[index].name);
+            fprintf(f_asm, "\n/*array add*/\n");
+            fprintf(f_asm, "    lw t0, 0(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, 4\n");
+            fprintf(f_asm, "    lw t2, 0(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, 4\n");
+            fprintf(f_asm, "    li t1, %d\n", table[index].offset * (-4) - 48);
+            fprintf(f_asm, "    li t3, 4\n");
+            fprintf(f_asm, "    mul t0, t0, t3\n");
+            fprintf(f_asm, "    sub t0, t1, t0\n");
+            fprintf(f_asm, "    sw t0, -4(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, -4\n");
+        }else {
+            fprintf(f_asm, "\n/*normal add*/\n");
+            fprintf(f_asm, "    lw t0, 0(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, 4\n");
+            fprintf(f_asm, "    lw t1, 0(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, 4\n");
+            fprintf(f_asm, "    add t0, t0, t1\n");
+            fprintf(f_asm, "    sw t0, -4(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, -4\n");
+        }
     }
-    | primary MINUS primary {
+    | primary MINUS atom {
+         if(is_array) {
+            int index = look_up_symbol($1);
+            $$=$1;
+            if(dbg)printf("HELLO %s\n",table[index].name);
+            fprintf(f_asm, "\n/*array sub*/\n");
+            fprintf(f_asm, "    lw t0, 0(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, 4\n");
+            fprintf(f_asm, "    lw t2, 0(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, 4\n");
+            fprintf(f_asm, "    li t3, 4\n");
+            fprintf(f_asm, "    mul t0, t0, t3\n");
+            fprintf(f_asm, "    add t0, t2, t0\n");
+            fprintf(f_asm, "    sw t0, -4(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, -4\n");
+        } else {
+            fprintf(f_asm, "    lw t0, 0(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, 4\n");
+            fprintf(f_asm, "    lw t1, 0(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, 4\n");
+            fprintf(f_asm, "    sub t0, t1, t0\n");
+            fprintf(f_asm, "    sw t0, -4(sp)\n");
+            fprintf(f_asm, "    addi sp, sp, -4\n");
+        }
     }
     | atom { $$ = $1;}
     ;
 
 atom
-    : atom STAR atom {
+    : atom STAR unary_expr {
+        fprintf(f_asm, "    lw t0, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    lw t1, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    mul t0, t0, t1\n");
+        fprintf(f_asm, "    sw t0, -4(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, -4\n");
     }
-    | atom DIVIDE atom {
+    | atom DIVIDE unary_expr {
+        fprintf(f_asm, "    lw t0, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    lw t1, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    div t0, t1, t0\n");
+        fprintf(f_asm, "    sw t0, -4(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, -4\n");
 
     }
-    | atom MOD atom {
+    | atom MOD unary_expr {
     }
     | unary_expr { $$ = $1;}
     ;
@@ -507,9 +600,22 @@ unary_expr
     }
     | PLUS unary_expr %prec UPLUS {
     }
-    | MINUS unary_expr %prec UMINUS {
-    }
     | STAR unary_expr %prec DEREF {
+        fprintf(f_asm, "\n/*unary multiply*/\n");
+        fprintf(f_asm, "    lw t0, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        /*section B*/
+        fprintf(f_asm, "    add t0, t0, s0\n");
+        fprintf(f_asm, "    lw t1, 0(t0)\n");
+        fprintf(f_asm, "    sw t1, -4(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, -4\n");
+    }
+    | MINUS unary_expr %prec UMINUS {
+        fprintf(f_asm, "    lw t0, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    sub t0, zero, t0\n");
+        fprintf(f_asm, "    sw t0, -4(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, -4\n");
     }
     | AND unary_expr %prec ADDR_OF {
     }
@@ -519,8 +625,7 @@ unary_expr
     }
     | DEC unary_expr {
     }
-    | post_expr { 
-       }
+    | post_expr { $$=$1;  }
     ;
 
 
@@ -535,7 +640,7 @@ post_expr
     }
     | post_expr LPAREN RPAREN {
     }
-    | paren_expr { }
+    | paren_expr {$$=$1; }
     ;
 
 
@@ -543,7 +648,7 @@ post_expr
 arg_list
     : arg_list COMMA assign_expr {
     }
-    | expr { $$ = $1;}
+    | assign_expr { $$ = $1;}
     ;
 
 paren_expr
@@ -552,7 +657,7 @@ paren_expr
     | LPAREN assign_expr RPAREN { 
     }
     | literal { }
-    | var { }
+    | var { $$=$1; }
     ;
 
 literal
@@ -573,6 +678,26 @@ literal
 
 var
     : ID {
+        fprintf(f_asm, "\n/*    ID*/\n");
+        $$=$1;
+        int index = look_up_symbol($1);
+        if(table[index].type == T_POINTER)is_array=1;
+        if(in_while==0){
+            if (table[index].mode == LOCAL_MODE) {
+                fprintf(f_asm, "    lw t0, %d(s0)\n", table[index].offset * (-4) - 48);
+                fprintf(f_asm, "    sw t0, -4(sp)\n");
+                fprintf(f_asm, "    addi sp, sp, -4\n");
+            } else {
+                /*fprintf(f_asm, "    lw t0, %d(sp)\n", table[index].offset * (-4) - 16);
+                fprintf(f_asm, "    sw t0, -4(sp)\n");
+                fprintf(f_asm, "    addi sp, sp, -4\n");*/
+            }
+        }else {
+            fprintf(f_asm, "    lw t0, %d(s0)\n", table[index].offset * (-4) - 48);
+            fprintf(f_asm, "    li t1, 0\n");
+            fprintf(f_asm, "    beq t1, t0, L%d\n", cur_label);
+        }
+
 
     }
     | non_ptr_array_id{
@@ -582,8 +707,18 @@ var
 
 non_ptr_array_id
     : ID array_dim{ 
-        
-         }
+        int index = look_up_symbol($1);
+        fprintf(f_asm, "    li t0, %d\n", table[index].offset * (-4) - 48);
+        fprintf(f_asm, "    lw t1, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    li t2, 4\n");
+        fprintf(f_asm, "    mul t1, t1, t2\n");
+        fprintf(f_asm, "    sub t0, t0, t1\n");
+        fprintf(f_asm, "    add t0, s0, t0\n");
+        fprintf(f_asm, "    lw t1, 0(t0)\n");
+        fprintf(f_asm, "    sw t1, -4(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, -4\n");
+    } 
     ;
 
 
