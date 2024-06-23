@@ -64,12 +64,12 @@ char* my_dtoa(double f) {       //double to string
 // NEW TOKEN FOR HW3
 
 
-%type <stringVal> declaration type id non_ptr_id non_ptr_array_id declr_or_def
+%type <stringVal> declaration type id  non_ptr_array_id declr_or_def
 %type <stringVal> scalar_decl idents option id_assignment ptr_assignee
 
-%type <stringVal> assign_expr expr term oror_expr
+%type <stringVal> assign_expr expr term 
 %type <stringVal> bitwise_or_expr bitwise_xor_expr bitwise_and_expr
-%type <stringVal> factor primary atom unary_expr shift_expr post_expr paren_expr literal var
+%type <stringVal> factor primary atom unary_expr post_expr paren_expr literal var
 
 %type <stringVal> stmts stmt if_else_stmt switch_stmt while_stmt for_stmt return_stmt compound_stmt comp_stmt_content
 %type <stringVal> switch_clauses switch_clause for_condition for_last_condition
@@ -382,7 +382,7 @@ assign_expr
     : ID ASSIGN assign_expr  {
         is_array = 0;
     }
-    | ID LSQBRACK assign_expr RSQBRACK ASSIGN assign_expr{
+    | ID LSQBRACK expr RSQBRACK ASSIGN assign_expr{
         is_array = 0;
         fprintf(f_asm, "\n/*    normal assign*/\n");
         $$=$1;
@@ -428,6 +428,7 @@ ptr_assignee
         $$=$3;
 
     }
+    ;
 
 expr
     : expr OROR term {
@@ -477,13 +478,6 @@ factor
     | primary { $$ = $1; }
     ;
 
-shift_expr
-    : shift_expr LEFT_SHIFT primary {
-    }
-    | shift_expr RIGHT_SHIFT primary {
-    }
-    | primary { $$ = $1;}
-    ;
 
 primary
     : primary PLUS primary {
@@ -578,7 +572,7 @@ literal
 
 
 var
-    : non_ptr_id {
+    : ID {
 
     }
     | non_ptr_array_id{
@@ -587,7 +581,7 @@ var
 
 
 non_ptr_array_id
-    : non_ptr_id array_dim{ 
+    : ID array_dim{ 
         
          }
     ;
@@ -599,13 +593,11 @@ type
     ;
 
 id
-    : non_ptr_id { $$=$1; }
+    : ID { $$=$1; }
     | STAR ID { $$ = $2; }
     ;
 
-non_ptr_id
-    : ID { $$=$1; }
-    ;
+
 
 
 %%
