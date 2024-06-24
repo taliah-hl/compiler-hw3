@@ -31,6 +31,15 @@ FLOAT [+-]?("."[0-9]+|[0-9]+"."|[0-9]+"."[0-9]+)
 LINE "\n"
 
 %%
+"HIGH" {
+    yylval.intval = 1;
+    return SIGNAL_LV;
+}
+
+"LOW" {
+    yylval.intval = 0;
+    return SIGNAL_LV;
+}
 "/*" {
     BEGIN MULTIPLE_COMMENTS;
 }

@@ -45,7 +45,7 @@ char* my_dtoa(double f) {       //double to string
 }
 
 %token <stringVal> ID TYPE CHAR STRING
-%token <intVal> NUMBER
+%token <intVal> NUMBER SIGNAL_LV
 %token <doubleVal> DOUBLE
 
 %token <stringVal> SEMICOLON COMMA COLON
@@ -61,7 +61,7 @@ char* my_dtoa(double f) {       //double to string
 %token <stringVal> CASE DEFAULT
 
 // NEW TOKEN FOR HW3
-
+%token <stringVal> DIGITALWRITE DELAY 
 
 %type <stringVal> declaration type id  non_ptr_array_id declr_or_def
 %type <stringVal> scalar_decl idents option id_assignment ptr_assignee
@@ -71,8 +71,8 @@ char* my_dtoa(double f) {       //double to string
 %type <stringVal> factor primary atom unary_expr post_expr paren_expr var
 %type <intVal> literal array_dim
 
-%type <stringVal> stmts stmt if_else_stmt switch_stmt while_stmt for_stmt return_stmt compound_stmt comp_stmt_content
-%type <stringVal> switch_clauses switch_clause for_condition for_last_condition
+%type <stringVal> stmts stmt if_stmt_front if_else_stmt switch_stmt while_stmt for_stmt return_stmt compound_stmt comp_stmt_content
+%type <stringVal> switch_clauses switch_clause for_condition1 for_condition2 for_last_condition
 
 %type <stringVal> array_decl arrays array_id
 %type <stringVal> funtion_decl function_def params param arg_list
@@ -248,31 +248,75 @@ stmts
     | stmt { }
     ;
 stmt
-    : assign_expr SEMICOLON {
-
-    }
-    | if_else_stmt { }
-    | switch_stmt {  }
-    | while_stmt { }
-    | for_stmt {}
-    | return_stmt { }
-    | BREAK SEMICOLON {
-
-    } 
-    | CONTINUE SEMICOLON {
-
-    }
-    | compound_stmt {
-
+    : assign_expr SEMICOLON { $$=$1;    }
+    | if_else_stmt { $$=$1;}
+    | switch_stmt { $$=$1; }
+    | while_stmt {$$=$1; }
+    | for_stmt {$$=$1;}
+    | return_stmt { $$=$1;}
+    | compound_stmt { $$=$1;}
+    | delay_stmt{$$ = $$;}
+    | digitalwrite_stmt {$$ = $$;}
+    ;
+digitalwrite_stmt
+    : DIGITALWRITE LPAREN NUMBER COMMA SIGNAL_LV RPAREN SEMICOLON{
+        fprintf(f_asm, "    li t0, %d\n", $5);
+        fprintf(f_asm, "    sw t0, -4(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, -4\n");
+        fprintf(f_asm, "    li t0, %d\n", $3);
+        fprintf(f_asm, "    sw t0, -4(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, -4\n");
+        fprintf(f_asm, "    lw a0, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    lw a1, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    sw ra, -4(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, -4\n");
+        fprintf(f_asm, "    jal ra, digitalWrite\n");
+        fprintf(f_asm, "    lw ra, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
     }
     ;
 
-if_else_stmt
-    : IF LPAREN assign_expr RPAREN compound_stmt {
-
+delay_stmt
+    : DELAY LPAREN assign_expr RPAREN SEMICOLON {
+        fprintf(f_asm, "    lw a0, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    sw ra, -4(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, -4\n");
+        fprintf(f_asm, "    jal ra, delay\n");
+        fprintf(f_asm, "    lw ra, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
     }
-    | IF LPAREN assign_expr RPAREN compound_stmt ELSE compound_stmt {
+    ;
 
+if_stmt_front:
+    IF {
+        cur_scope++;
+        cur_label++;
+        in_if = 1;
+    }LPAREN assign_expr {
+        push_label(cur_label);
+        /*fprintf(f_asm, "    lw t0, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");*/
+        in_if = 0;
+    }
+if_else_stmt
+    : if_stmt_front RPAREN compound_stmt { 
+        int tmp_label = pop_label();
+        fprintf(f_asm, "L%d:\n", tmp_label);
+        pop_up_symbol(cur_scope);
+        cur_scope--;
+    }
+    | if_stmt_front RPAREN compound_stmt ELSE{
+        int tmp_label = pop_label();
+        fprintf(f_asm, "    beq zero, zero, EXIT%d\n", tmp_label);
+        fprintf(f_asm, "L%d:\n", tmp_label);
+        push_label(tmp_label);
+    } compound_stmt {
+        int tmp_label = pop_label();
+        fprintf(f_asm, "EXIT%d:\n", tmp_label);
+        pop_up_symbol(cur_scope--);
     }
     ;
 
@@ -310,39 +354,70 @@ switch_clause:
     }
     ;
 while_stmt
-    : WHILE LPAREN assign_expr RPAREN stmt {
+    : WHILE {
+        cur_label++;
+        cur_scope++;
+        fprintf(f_asm, "WHILE%d:\n", cur_label);
+        push_label(cur_label);
+        in_while = 1;
+    }LPAREN assign_expr {
+         in_while = 0;
+    } RPAREN stmt {
+        
+        int tmp_label = pop_label();
+        fprintf(f_asm, "    beq zero, zero, WHILE%d\n", tmp_label);
+        fprintf(f_asm, "L%d:\n", tmp_label);
+        pop_up_symbol(cur_scope);
+        cur_scope--;
 
     }
-    | DO stmt WHILE LPAREN assign_expr RPAREN SEMICOLON {
-
+    | DO {
+        cur_scope++;
+        cur_label++;
+        do_flag = 1;
+        fprintf(f_asm, "DOWHILE%d:\n", cur_label);
+        push_label(cur_label);  
+    } stmt WHILE LPAREN assign_expr RPAREN SEMICOLON {
+        int tmp_label = pop_label();
+        fprintf(f_asm, "    beq zero, zero, DOWHILE%d\n", tmp_label);
+        fprintf(f_asm, "L%d:\n", tmp_label);
+        pop_up_symbol(cur_scope);
+        cur_scope--;
     }
     ;
 
 for_stmt
-    : FOR LPAREN for_condition for_condition for_last_condition stmt {
+    : FOR LPAREN for_condition1 for_condition2 for_last_condition {
 
     }
     ;
-for_condition
-    :/* id_assignment SEMICOLON { //i=0;
-        char *s = (char*)malloc(sizeof(char)*(strlen($1)+2));
-        strcpy(s, $1);
-        strcat(s, ";");
-        $$ = s;
+for_condition1
+    : assign_expr SEMICOLON {
+        cur_scope++;
+        push_label(++cur_label);
+        in_for=1;
+        fprintf(f_asm, "FOR%d:\n", cur_label);
     }
-    
-    |*/ type assign_expr SEMICOLON {    //int i=0;
+    ;
 
-    }
-    | assign_expr SEMICOLON {
-    }
-    | SEMICOLON {
+for_condition2
+    : assign_expr SEMICOLON {
+        in_for=0;
     }
     ;
 for_last_condition
-    : assign_expr RPAREN {
-    }
-    | RPAREN {
+    : ID ASSIGN ID PLUS NUMBER RPAREN compound_stmt{
+        int tmp_label = pop_label();
+        int index = look_up_symbol($3);
+        
+        //printf("%d",table[index].scope);
+        fprintf(f_asm, "    lw t0, %d(s0)\n", table[index].offset * (-4) - 48);
+        fprintf(f_asm, "    addi t0, t0, 1\n");
+        fprintf(f_asm, "    sw t0, %d(s0)\n", table[index].offset * (-4) - 48);
+        fprintf(f_asm, "    beq zero, zero, FOR%d\n", tmp_label);
+        fprintf(f_asm, "L%d:\n", tmp_label);
+        pop_up_symbol(cur_scope);
+        cur_scope--;
     }
     ;
 
@@ -369,9 +444,7 @@ comp_stmt_content
     | stmt comp_stmt_content {
         
     }
-    | declaration{
-        
-    }
+    | declaration{ $$=$1; }
     | declaration comp_stmt_content {}
     ;
 
