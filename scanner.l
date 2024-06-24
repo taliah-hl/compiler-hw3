@@ -19,11 +19,14 @@ void removeSpaces(char *str) {
 
 }
 %}
+
 %x COMMENT
 %x MULTIPLE_COMMENTS
 
-ID (_|[a-zA-Z])(_|[a-zA-Z]|[0-9])*
+
+
 TYPE (("const"(" ")+)?("signed"(" ")+|"unsigned"(" ")+)?("long long"(" ")+|"long"(" ")+|"short"(" ")+)?"int")|(("const"(" ")+)?("signed"(" ")+|"unsigned"(" ")+)?("long long"|"long"|"short"|"char"))|(("const"(" ")+)?("signed"|"unsigned"|"float"|"double"|"void"))|"const"|"char"|"signed"|"unsigned"|"float"|"double"|"void"
+ID (_|[a-zA-Z])(_|[a-zA-Z]|[0-9])*
 NUMBER [0-9]+
 STRING \"(\\.|[^\n"\\])*\" 
 CHAR \'(\\.|[^\n'\\])\' 
@@ -31,15 +34,24 @@ FLOAT [+-]?("."[0-9]+|[0-9]+"."|[0-9]+"."[0-9]+)
 LINE "\n"
 
 %%
+"digitalWrite" {
+    return DIGITALWRITE;
+}
+
+"delay" {
+    return DELAY;
+}
+
 "HIGH" {
-    yylval.intval = 1;
+    yylval.intVal = 1;
     return SIGNAL_LV;
 }
 
 "LOW" {
-    yylval.intval = 0;
+    yylval.intVal = 0;
     return SIGNAL_LV;
 }
+
 "/*" {
     BEGIN MULTIPLE_COMMENTS;
 }
@@ -146,9 +158,8 @@ LINE "\n"
 }
 
 
-[ \t\n] ; /* Ignore whitespace */
+[ \t\n] {} /* Ignore whitespace */
 
-. { return yytext[0]; } /* Any other character is an error */
 
 %%
 
