@@ -455,16 +455,27 @@ comp_stmt_content
 assign_expr
     : ID ASSIGN assign_expr  {
         is_array = 0;
-        $$=$1;
-    }
-    | ID LSQBRACK assign_expr RSQBRACK ASSIGN assign_expr{
-        is_array = 0;
         fprintf(f_asm, "\n/*    normal assign*/\n");
         $$=$1;
         int index = look_up_symbol($1);
         fprintf(f_asm, "    lw t0, 0(sp)\n");
         fprintf(f_asm, "    addi sp, sp, 4\n");
         fprintf(f_asm, "    sw t0, %d(s0)\n", table[index].offset * (-4) - 48);
+    }
+    | ID LSQBRACK assign_expr RSQBRACK ASSIGN assign_expr{
+        is_array = 0;
+        int index = look_up_symbol($1);
+        fprintf(f_asm, "\n/*    array assign*/\n");
+        fprintf(f_asm, "    lw t0, 0(sp)\n"); //
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    lw t1, 0(sp)\n");
+        fprintf(f_asm, "    addi sp, sp, 4\n");
+        fprintf(f_asm, "    li t2, %d\n", table[index].offset * (-4) - 48);
+        fprintf(f_asm, "    li t3, 4\n");
+        fprintf(f_asm, "    mul t1, t1, t3\n");
+        fprintf(f_asm, "    sub t2, t2, t1\n");
+        fprintf(f_asm, "    add t2, s0, t2\n");
+        fprintf(f_asm, "    sw t0, 0(t2)\n");
     }
     | ptr_assignee ASSIGN assign_expr{
         is_array = 0;
